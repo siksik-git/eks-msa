@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: order-backend-ingress
+  namespace: soldesk
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 20m
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: my-issuer
+spec:
+  tls:
+  - hosts:
+    - "server.aws-project.click"
+    secretName: server-aws-project-click-tls
+  rules:
+  - host: server.aws-project.click
+    http:
+      paths:
+      - path: /member-service
+        pathType: Prefix
+        backend:
+          service:
+            name: apigateway-service
+            port:
+              number: 80
+      - path: /product-service
+        pathType: Prefix
+        backend:
+          service:
+            name: apigateway-service
+            port:
+              number: 80
+      - path: /ordering-service
+        pathType: Prefix
+        backend:
+          service:
+            name: apigateway-service
+            port:
+              number: 80
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80

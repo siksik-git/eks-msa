@@ -1,0 +1,149 @@
+name: deploy order order-backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout github
+        uses: actions/checkout@v4
+
+      - name: install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "v1.25.9"
+
+      - name: configure aws
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET }}
+          aws-region: ap-northeast-2
+
+      - name: update cluster information
+        run: aws eks update-kubeconfig --name my-cluster --region ap-northeast-2
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: detect changed services
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            gateway:
+              - 'msa/apigateway/**'
+            member:
+              - 'msa/member/**'
+            ordering:
+              - 'msa/ordering/**'
+            product:
+              - 'msa/product/**'
+            frontend:
+              - 'msa/frontend/**'
+
+      - name: stop if no service changed
+        if: |
+          steps.changes.outputs.gateway != 'true' &&
+          steps.changes.outputs.member != 'true' &&
+          steps.changes.outputs.ordering != 'true' &&
+          steps.changes.outputs.product != 'true' &&
+          steps.changes.outputs.frontend != 'true'
+        run: |
+          echo "No service directory changed. Skip build & deploy."
+          exit 0
+
+      - name: gateway build and push docker image to ecr
+        if: steps.changes.outputs.gateway == 'true'
+        env:
+          REGISTRY: 602664593454.dkr.ecr.ap-northeast-2.amazonaws.com
+          REPOSITORY: kbh-apigateway
+          IMAGE_TAG: latest
+        run: |
+          docker build \
+            -t $REGISTRY/$REPOSITORY:$IMAGE_TAG \
+            -f ./msa/apigateway/Dockerfile ./msa/apigateway
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      - name: deploy gateway
+        if: steps.changes.outputs.gateway == 'true'
+        run: |
+          kubectl apply -f ./msa/apigateway/k8s/depl_svc.yml
+          kubectl rollout restart deployment apigateway-depl -n soldesk
+
+      - name: member build and push docker image to ecr
+        if: steps.changes.outputs.member == 'true'
+        env:
+          REGISTRY: 602664593454.dkr.ecr.ap-northeast-2.amazonaws.com
+          REPOSITORY: kbh-member-service
+          IMAGE_TAG: latest
+        run: |
+          docker build \
+            -t $REGISTRY/$REPOSITORY:$IMAGE_TAG \
+            -f ./msa/member/Dockerfile ./msa/member
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      - name: deploy member
+        if: steps.changes.outputs.member == 'true'
+        run: |
+          kubectl apply -f ./msa/member/k8s/depl_svc.yml
+          kubectl rollout restart deployment member-depl -n soldesk
+
+      - name: order build and push docker image to ecr
+        if: steps.changes.outputs.ordering == 'true'
+        env:
+          REGISTRY: 602664593454.dkr.ecr.ap-northeast-2.amazonaws.com
+          REPOSITORY: kbh-ordering-service
+          IMAGE_TAG: latest
+        run: |
+          docker build \
+            -t $REGISTRY/$REPOSITORY:$IMAGE_TAG \
+            -f ./msa/ordering/Dockerfile ./msa/ordering
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      - name: deploy ordering
+        if: steps.changes.outputs.ordering == 'true'
+        run: |
+          kubectl apply -f ./msa/ordering/k8s/depl_svc.yml
+          kubectl rollout restart deployment ordering-depl -n soldesk
+
+      - name: product build and push docker image to ecr
+        if: steps.changes.outputs.product == 'true'
+        env:
+          REGISTRY: 602664593454.dkr.ecr.ap-northeast-2.amazonaws.com
+          REPOSITORY: kbh-product-service
+          IMAGE_TAG: latest
+        run: |
+          docker build \
+            -t $REGISTRY/$REPOSITORY:$IMAGE_TAG \
+            -f ./msa/product/Dockerfile ./msa/product
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      - name: deploy product
+        if: steps.changes.outputs.product == 'true'
+        run: |
+          kubectl apply -f ./msa/product/k8s/depl_svc.yml
+          kubectl rollout restart deployment product-depl -n soldesk
+
+      - name: frontend build and push docker image to ecr
+        if: steps.changes.outputs.frontend == 'true'
+        env:
+          REGISTRY: 602664593454.dkr.ecr.ap-northeast-2.amazonaws.com
+          REPOSITORY: kbh-frontend-service
+          IMAGE_TAG: latest
+        run: |
+          docker build \
+            -t $REGISTRY/$REPOSITORY:$IMAGE_TAG \
+            -f ./msa/frontend/Dockerfile ./msa/frontend
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      - name: deploy frontend
+        if: steps.changes.outputs.frontend == 'true'
+        run: |
+          kubectl apply -f ./msa/frontend/k8s/depl_svc.yml
+          kubectl rollout restart deployment frontend-depl -n soldesk

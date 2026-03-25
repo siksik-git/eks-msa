@@ -1,0 +1,17 @@
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: argo-aws-project-click-tls
+  namespace: argocd
+spec:
+  secretName: argo-aws-project-click-tls
+  duration: 2160h #90day
+  renewBefore: 360h #before 15day
+  issuerRef:
+    name: my-issuer
+    kind: ClusterIssuer
+  commonName: argo.aws-project.click
+
+  dnsNames:
+  - argo.aws-project.click
